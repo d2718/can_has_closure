@@ -1,0 +1,1 @@
+{"compiledCode":"function do_some_stuff(a){var b\u003ddocument.getElementById(\"stuff_elt\");a\u003ddocument.createTextNode(a);b.appendChild(a)}do_some_stuff(\"vrogs are blue!\");console.log(\"arf, arf\");do_some_stuff(\"why doesn't this work?\");","statistics":{"originalSize":262,"originalGzipSize":191,"compressedSize":212,"compressedGzipSize":173,"compileTime":7}}
