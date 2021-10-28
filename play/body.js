@@ -9,9 +9,4 @@ function do_some_stuff(blah) {
 do_some_stuff("vrogs are blue!");
 console.log("arf, arf");
 
-
-d = frog_stuff;
-do_so
-do_some_stuff("this is
-
 do_some_stuff("why doesn't this work?");
