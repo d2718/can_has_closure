@@ -15,7 +15,6 @@ local json = require 'dkjson'
 -- The functionality used from both of these modules should probably be
 -- copy-pasted into this script, if it's going to be distributed.
 -- Then the requirement of 'localizer' could be removed, too.
-local misc = require 'sysmisc'
 local args = require 'dargs'
 
 local CFG = {
@@ -34,9 +33,91 @@ local FORM_DATA = {
 }
 local TAIL_ARGS = {
     "--header", "Content-type: application/x-www-form-urlencoded",
-    --"--trace-ascii", "dump.txt",
     "-s", "https://closure-compiler.appspot.com/compile",
 }
+
+-- This is functionality copy-pasted in from my "sysmisc" module. This is
+-- undoubtedly more convenient than distributing it separately.
+local misc = {
+    -- Get the process ID of the current process.
+    ["getpid"] = function()
+        local f, err = io.open('/proc/self/stat', 'r')
+        if not f then return nil, err end
+        d = f:read('*number')
+        f:close()
+        return d, nil
+    end,
+    
+    -- Escape the array of provided arguments and concatenate them into a
+    -- single line one could pass to bash.
+    ["shell_escape"] = function(args)
+        local ret = {}
+        for _,a in pairs(args) do
+            s = tostring(a)
+            if (s == '<') or (s == '>') or (s == '&') then
+                -- don't escape this
+            elseif s:match("[^A-Za-z0-9_/:=-]") then
+                s = "'"..s:gsub("'", "'\\''").."'"
+            end
+            table.insert(ret,s)
+        end
+        return table.concat(ret, " ")
+    end,
+    
+    -- Print, printf()-style, to stderr. Ensures output is newline-terminated.
+    ["errpt"] = function(format_str, ...)
+        local msg = string.format(format_str, unpack(arg))
+        io.stderr:write(msg)
+        local n = #msg
+        if msg:sub(n, n) ~= '\n' then io.stderr:write('\n') end
+    end,
+}
+
+local function (format_str, ...)
+    misc.errpt(format_str, unpack(arg))
+    os.exit(1)
+end
+
+-- This argument parser is copy-pasted in from my "dargs" module. Having it
+-- here is more convenient than distributing it separately.
+local function dargs()
+    local a = {}
+
+    local FLAG_PATTERN = '^%-%-?(.+)$'
+    local FLAG = 0
+    local VALUE = 1
+
+    for _, x in ipairs(arg) do
+        local m = x:match(FLAG_PATTERN)
+        if m then table.insert(a, {FLAG, m}) else table.insert(a, {VALUE, x}) end
+    end
+
+    local r = {}
+    local n = 1
+
+    while true do
+        if a[n] == nil then break end
+        
+        if a[n][1] == VALUE then
+            table.insert(r, a[n][2])
+            n = n + 1
+        else
+            local k = a[n][2]
+            n = n + 1
+            if a[n] then
+                if a[n][1] == VALUE then
+                    r[k] = a[n][2]
+                    n = n + 1
+                else r[k] = ""
+                end
+            else r[k] = ""
+            end
+        end
+    end
+
+    return r
+end
+
 
 local TEMP_FNAME = string.format("%s/chc-%d.js", CFG.temp, misc.getpid())
 
@@ -71,6 +152,8 @@ local function fname_mangle(fname)
 end
 
 dbg("TEMP_FNAME: %q", TEMP_FNAME)
+
+local args = dargs()
 
 -- Input filename should be the first positional arg. If there's no first
 -- positional arg, the program will read from stdin.
