@@ -6,16 +6,17 @@ chc.lua
 the Lua can_has_closure implementation
 
 a thin wrapper around Google's Closure JS Minifier API
+
+Dan Hill
+2021-10-28
 --]]
 
 local DEBUG = false
 
-require 'localizer'
+-- David Kolf's excellent JSON parser, found at one of the following:
+-- * http://dkolf.de/src/dkjson-lua.fsl/home
+-- * https://github.com/LuaDist/dkjson
 local json = require 'dkjson'
--- The functionality used from both of these modules should probably be
--- copy-pasted into this script, if it's going to be distributed.
--- Then the requirement of 'localizer' could be removed, too.
-local args = require 'dargs'
 
 local CFG = {
     curl = "/usr/bin/curl",
@@ -23,6 +24,7 @@ local CFG = {
     temp = "/dev/shm",
 }
 
+-- Arguments to be added to the curl command with --data-urlencode.
 local FORM_DATA = {
     "compilation_level=SIMPLE_OPTIMIZATIONS",
     "output_info=compiled_code",
@@ -31,6 +33,8 @@ local FORM_DATA = {
     "output_info=statistics",
     "output_format=json",
 }
+
+-- Other arguments to curl.
 local TAIL_ARGS = {
     "--header", "Content-type: application/x-www-form-urlencoded",
     "-s", "https://closure-compiler.appspot.com/compile",
@@ -73,31 +77,20 @@ local misc = {
     end,
 }
 
-local function (format_str, ...)
-    misc.errpt(format_str, unpack(arg))
-    os.exit(1)
-end
-
 -- This argument parser is copy-pasted in from my "dargs" module. Having it
 -- here is more convenient than distributing it separately.
 local function dargs()
-    local a = {}
-
     local FLAG_PATTERN = '^%-%-?(.+)$'
-    local FLAG = 0
-    local VALUE = 1
-
+    local FLAG, VALUE = 0, 1
+    local a = {}
     for _, x in ipairs(arg) do
         local m = x:match(FLAG_PATTERN)
         if m then table.insert(a, {FLAG, m}) else table.insert(a, {VALUE, x}) end
     end
 
-    local r = {}
-    local n = 1
-
+    local r, n = {}, 1
     while true do
         if a[n] == nil then break end
-        
         if a[n][1] == VALUE then
             table.insert(r, a[n][2])
             n = n + 1
@@ -114,17 +107,15 @@ local function dargs()
             end
         end
     end
-
     return r
 end
 
-
+-- The temporary filename to use for input, output, or both if necessary.
 local TEMP_FNAME = string.format("%s/chc-%d.js", CFG.temp, misc.getpid())
 
+-- Emit a debut message if DEBUG == true.
 local function dbg(...)
-    if DEBUG then
-        misc.errpt(unpack(arg))
-    end
+    if DEBUG then misc.errpt(unpack(arg)) end
 end
 
 -- Remove the temporary file `TEMP_FNAME if it exists.
@@ -134,6 +125,13 @@ local function cleanup()
         f:close()
         os.execute(misc.shell_escape({CFG.rm, TEMP_FNAME}))
     end
+end
+
+-- Ensure the temp file is cleaned up, scream, and die.
+local function die(format_str, ...)
+    cleanup()
+    misc.errpt(format_str, unpack(arg))
+    os.exit(1)
 end
 
 -- If the filename has an extension, insert an extra ".min" before the
@@ -179,7 +177,7 @@ if not input_fname then
     local js_text = io.stdin:read("*all")
     local f, err = io.open(TEMP_FNAME, "w")
     if not f then
-        misc.die("Unable to open temp file %q for writing: %s", TEMP_FNAME, err)
+        die("Unable to open temp file %q for writing: %s", TEMP_FNAME, err)
     end
     f:write(js_text)
     f:flush()
@@ -209,17 +207,14 @@ dbg("command: %s", misc.shell_escape(cmd))
 
 -- Call curl; if it returns an error code, say so, clean up, and die.
 local code = os.execute(misc.shell_escape(cmd))
-if code ~= 0 then
-    cleanup()
-    misc.die("curl reports error %d", code)
-end
+if code ~= 0 then die("curl reports error %d", code) end
 
 -- Load the curl output.
 local curl_output = nil
 do
     local f, err = io.open(TEMP_FNAME, "r")
     if not f then
-        misc.die("Unable to open temp file with curl output %q: %s", temp_fname, err)
+        die("Unable to open temp file with curl output %q: %s", temp_fname, err)
     end
     curl_output = f:read("*all")
     f:close()
@@ -228,10 +223,7 @@ dbg("curl output:\n%s", curl_output)
 
 -- Decode the curl output.
 local r, err = json.decode(curl_output)
-if not r then
-    cleanup()
-    misc.die("Unable to decode returned data: %s", err)
-end
+if not r then die("Unable to decode returned data: %s", err) end
 
 -- Stop and show errors, if present.
 if r.errors then
@@ -239,8 +231,7 @@ if r.errors then
         misc.errpt("ERROR line %d, (pos %d): %s", e.lineno, e.charno, e.error)
         misc.errpt("%d %s", e.lineno, e.line)
     end
-    cleanup()
-    misc.die("No output generated.")
+    die("No output generated.")
 end
 
 -- I don't know the structure of warnings yet, so I don't know how to
@@ -252,10 +243,8 @@ end
 -- If output should be written to a file, do it, otherwise dump to stdout.
 if output_fname then
     local f, err = io.open(output_fname, "w")
-    if not f then
-        cleanup()
-        misc.die("Unable to open %q for writing: %s", output_fname, err)
-    end
+    if not f then die("Unable to open %q for writing: %s", output_fname, err) end
+    
     f:write(r["compiledCode"])
     f:flush()
     f:close()
