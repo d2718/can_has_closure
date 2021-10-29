@@ -18,6 +18,7 @@ local DEBUG = false
 -- * https://github.com/LuaDist/dkjson
 local json = require 'dkjson'
 
+-- You may need to alter these values slightly for your system.
 local CFG = {
     curl = "/usr/bin/curl",
     rm   = "/bin/rm",
